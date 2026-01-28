@@ -1,8 +1,3 @@
-# Copyright Envoy AI Gateway Authors
-# SPDX-License-Identifier: Apache-2.0
-# The full text of the Apache license is available in the LICENSE file at
-# the root of the repo.
-
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -202,6 +197,19 @@ spec:
                           - message: exactly one of secretRef or inline must be set
                             rule: (has(self.secretRef) && !has(self.inline)) || (!has(self.secretRef)
                               && has(self.inline))
+                        headersToForward:
+                          description: |-
+                            HeadersToForward specifies which headers from the original client request should be forwarded to this backend.
+                            Headers are case-insensitive per HTTP spec. If a header doesn't exist in the request, it is silently ignored.
+
+                            Conflict detection: If APIKey is configured and headersToForward includes the APIKey injection header
+                            (default "Authorization" or custom via APIKey.Header), the MCPRoute will be rejected with NotAccepted status.
+                          items:
+                            maxLength: 256
+                            minLength: 1
+                            type: string
+                          maxItems: 16
+                          type: array
                       type: object
                     toolSelector:
                       description: |-
