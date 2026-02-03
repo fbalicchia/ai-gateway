@@ -110,6 +110,7 @@ func NewServer(opts *Options) (*http.Server, *mcp.Server) {
 	mcp.AddTool(s, ToolDelay.Tool, ToolDelay.Handler)
 	mcp.AddTool(s, ToolElicitEmail.Tool, ToolElicitEmail.Handler)
 	mcp.AddTool(s, ToolCreateMessage.Tool, ToolCreateMessage.Handler)
+	mcp.AddTool(s, ToolGetHeader.Tool, ToolGetHeader.Handler)
 	promptAddTool := newToolAddPrompt(s)
 	mcp.AddTool(s, promptAddTool.Tool, promptAddTool.Handler)
 	resourceUpdateNotificationTool := newToolResourceUpdateNotification(s)

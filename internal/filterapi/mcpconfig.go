@@ -43,6 +43,11 @@ type MCPBackend struct {
 
 	// ToolSelector filters the tools exposed by this backend. If not set, all tools are exposed.
 	ToolSelector *MCPToolSelector `json:"toolSelector,omitempty"`
+
+	// HeadersToForward specifies which headers from the original client request should be forwarded.
+	// Headers are normalized to lowercase for case-insensitive matching.
+	// +optional
+	HeadersToForward []string `json:"headersToForward,omitempty"`
 }
 
 // MCPBackendName is the name of the MCP backend.

@@ -118,6 +118,23 @@ func (m *mcpRequestContext) applyLogHeaderMappings(req *http.Request, msg jsonrp
 	}
 }
 
+// applyHeadersToForward forwards specified headers from the original request to the backend request.
+// Headers are looked up case-insensitively from m.requestHeaders.
+func (m *mcpRequestContext) applyHeadersToForward(req *http.Request, backend filterapi.MCPBackend) {
+	if len(backend.HeadersToForward) == 0 || m.requestHeaders == nil {
+		return
+	}
+
+	// HeadersToForward are already normalized to lowercase in filterapi conversion
+	for _, headerToForward := range backend.HeadersToForward {
+		// Get value case-insensitively from original request
+		if value := m.requestHeaders.Get(headerToForward); value != "" {
+			req.Header.Set(headerToForward, value)
+		}
+		// If header doesn't exist, silently skip (not an error)
+	}
+}
+
 func extractMetaFromJSONRPCMessage(msg jsonrpc.Message) map[string]any {
 	req, ok := msg.(*jsonrpc.Request)
 	if !ok || req == nil || len(req.Params) == 0 {
@@ -364,6 +381,7 @@ func (m *mcpRequestContext) invokeJSONRPCRequest(ctx context.Context, routeName 
 	addMCPHeaders(req, msg, routeName, backend.Name)
 	m.applyLogHeaderMappings(req, msg)
 	m.applyOriginalPathHeaders(req)
+	m.applyHeadersToForward(req, backend)
 	if cse != nil {
 		if len(cse.sessionID) > 0 {
 			req.Header.Set(sessionIDHeader, string(cse.sessionID))

@@ -1577,3 +1577,211 @@ func Test_mergeBodyMutations(t *testing.T) {
 		})
 	}
 }
+
+func Test_mcpConfig_HeadersToForward(t *testing.T) {
+	tests := []struct {
+		name         string
+		mcpRoutes    []aigv1a1.MCPRoute
+		wantConfig   bool
+		wantBackends []struct {
+			name             string
+			headersToForward []string
+		}
+	}{
+		{
+			name:       "no routes",
+			mcpRoutes:  nil,
+			wantConfig: false,
+		},
+		{
+			name: "route without headersToForward",
+			mcpRoutes: []aigv1a1.MCPRoute{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "route1", Namespace: "default"},
+					Spec: aigv1a1.MCPRouteSpec{
+						BackendRefs: []aigv1a1.MCPRouteBackendRef{
+							{
+								BackendObjectReference: gwapiv1.BackendObjectReference{Name: "backend1"},
+							},
+						},
+					},
+				},
+			},
+			wantConfig: true,
+			wantBackends: []struct {
+				name             string
+				headersToForward []string
+			}{
+				{name: "backend1", headersToForward: nil},
+			},
+		},
+		{
+			name: "route with headersToForward - normalized to lowercase",
+			mcpRoutes: []aigv1a1.MCPRoute{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "route1", Namespace: "default"},
+					Spec: aigv1a1.MCPRouteSpec{
+						BackendRefs: []aigv1a1.MCPRouteBackendRef{
+							{
+								BackendObjectReference: gwapiv1.BackendObjectReference{Name: "backend1"},
+								SecurityPolicy: &aigv1a1.MCPBackendSecurityPolicy{
+									HeadersToForward: []string{"X-User-ID", "X-Tenant-ID", "Authorization"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantConfig: true,
+			wantBackends: []struct {
+				name             string
+				headersToForward []string
+			}{
+				{name: "backend1", headersToForward: []string{"x-user-id", "x-tenant-id", "authorization"}},
+			},
+		},
+		{
+			name: "route with mixed case headers normalized to lowercase",
+			mcpRoutes: []aigv1a1.MCPRoute{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "route1", Namespace: "default"},
+					Spec: aigv1a1.MCPRouteSpec{
+						BackendRefs: []aigv1a1.MCPRouteBackendRef{
+							{
+								BackendObjectReference: gwapiv1.BackendObjectReference{Name: "backend1"},
+								SecurityPolicy: &aigv1a1.MCPBackendSecurityPolicy{
+									HeadersToForward: []string{"x-user-id", "X-TENANT-ID", "X-Request-Id"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantConfig: true,
+			wantBackends: []struct {
+				name             string
+				headersToForward []string
+			}{
+				{name: "backend1", headersToForward: []string{"x-user-id", "x-tenant-id", "x-request-id"}},
+			},
+		},
+		{
+			name: "multiple backends with different headersToForward",
+			mcpRoutes: []aigv1a1.MCPRoute{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "route1", Namespace: "default"},
+					Spec: aigv1a1.MCPRouteSpec{
+						BackendRefs: []aigv1a1.MCPRouteBackendRef{
+							{
+								BackendObjectReference: gwapiv1.BackendObjectReference{Name: "backend1"},
+								SecurityPolicy: &aigv1a1.MCPBackendSecurityPolicy{
+									HeadersToForward: []string{"X-User-ID"},
+								},
+							},
+							{
+								BackendObjectReference: gwapiv1.BackendObjectReference{Name: "backend2"},
+								SecurityPolicy: &aigv1a1.MCPBackendSecurityPolicy{
+									HeadersToForward: []string{"X-Tenant-ID", "X-Request-ID"},
+								},
+							},
+							{
+								BackendObjectReference: gwapiv1.BackendObjectReference{Name: "backend3"},
+								// No security policy - no headers to forward
+							},
+						},
+					},
+				},
+			},
+			wantConfig: true,
+			wantBackends: []struct {
+				name             string
+				headersToForward []string
+			}{
+				{name: "backend1", headersToForward: []string{"x-user-id"}},
+				{name: "backend2", headersToForward: []string{"x-tenant-id", "x-request-id"}},
+				{name: "backend3", headersToForward: nil},
+			},
+		},
+		{
+			name: "route with APIKey but no headersToForward",
+			mcpRoutes: []aigv1a1.MCPRoute{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "route1", Namespace: "default"},
+					Spec: aigv1a1.MCPRouteSpec{
+						BackendRefs: []aigv1a1.MCPRouteBackendRef{
+							{
+								BackendObjectReference: gwapiv1.BackendObjectReference{Name: "backend1"},
+								SecurityPolicy: &aigv1a1.MCPBackendSecurityPolicy{
+									APIKey: &aigv1a1.MCPBackendAPIKey{
+										Inline: ptr.To("secret-key"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantConfig: true,
+			wantBackends: []struct {
+				name             string
+				headersToForward []string
+			}{
+				{name: "backend1", headersToForward: nil},
+			},
+		},
+		{
+			name: "route with both APIKey and headersToForward",
+			mcpRoutes: []aigv1a1.MCPRoute{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "route1", Namespace: "default"},
+					Spec: aigv1a1.MCPRouteSpec{
+						BackendRefs: []aigv1a1.MCPRouteBackendRef{
+							{
+								BackendObjectReference: gwapiv1.BackendObjectReference{Name: "backend1"},
+								SecurityPolicy: &aigv1a1.MCPBackendSecurityPolicy{
+									APIKey: &aigv1a1.MCPBackendAPIKey{
+										Inline: ptr.To("secret-key"),
+										Header: ptr.To("X-API-Key"),
+									},
+									HeadersToForward: []string{"X-User-ID", "X-Tenant-ID"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantConfig: true,
+			wantBackends: []struct {
+				name             string
+				headersToForward []string
+			}{
+				{name: "backend1", headersToForward: []string{"x-user-id", "x-tenant-id"}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config, hasEffective := mcpConfig(tt.mcpRoutes)
+
+			if !tt.wantConfig {
+				require.Nil(t, config)
+				require.False(t, hasEffective)
+				return
+			}
+
+			require.NotNil(t, config)
+			require.True(t, hasEffective)
+			require.Len(t, config.Routes, 1)
+
+			route := config.Routes[0]
+			require.Len(t, route.Backends, len(tt.wantBackends))
+
+			for i, wantBackend := range tt.wantBackends {
+				got := route.Backends[i]
+				require.Equal(t, wantBackend.name, got.Name, "backend name mismatch at index %d", i)
+				require.Equal(t, wantBackend.headersToForward, got.HeadersToForward, "headersToForward mismatch for backend %s", wantBackend.name)
+			}
+		})
+	}
+}

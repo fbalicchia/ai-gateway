@@ -120,6 +120,10 @@ func (c *MCPRouteController) syncMCPRoute(ctx context.Context, mcpRoute *aigv1a1
 	// This allows the MCP proxy to route requests to the correct backend based on the header.
 	for i := range mcpRoute.Spec.BackendRefs {
 		ref := &mcpRoute.Spec.BackendRefs[i]
+		// Validate the backend security policy for conflicts between headersToForward and APIKey.
+		if err = validateBackendSecurityPolicy(ref.SecurityPolicy, ref.Name); err != nil {
+			return fmt.Errorf("invalid backend security policy for %s: %w", ref.Name, err)
+		}
 		name := mcpPerBackendRefHTTPRouteName(mcpRoute.Name, ref.Name)
 		var httpRoute *gwapiv1.HTTPRoute
 		httpRoute, existing, err = c.getOrNewHTTPRouteRoute(ctx, mcpRoute, name)
@@ -676,5 +680,29 @@ func (c *MCPRouteController) ensureCredentialSecret(ctx context.Context, namespa
 			return fmt.Errorf("failed to update credential secret: %w", secretErr)
 		}
 	}
+	return nil
+}
+
+// validateBackendSecurityPolicy checks for conflicts between headersToForward and APIKey configuration.
+// Returns an error if there's a conflict, nil otherwise.
+func validateBackendSecurityPolicy(policy *aigv1a1.MCPBackendSecurityPolicy, backendName gwapiv1.ObjectName) error {
+	if policy == nil || policy.APIKey == nil || len(policy.HeadersToForward) == 0 {
+		return nil // No conflict possible
+	}
+
+	// Determine the APIKey injection header (defaults to "Authorization")
+	apiKeyHeader := strings.ToLower(cmp.Or(ptr.Deref(policy.APIKey.Header, ""), "Authorization"))
+
+	// Check for conflicts (case-insensitive)
+	for _, forwardHeader := range policy.HeadersToForward {
+		if strings.EqualFold(forwardHeader, apiKeyHeader) {
+			return fmt.Errorf(
+				"backend %q: cannot forward header %q while APIKey injects to the same header (configured as %q). "+
+					"Either remove %q from headersToForward or configure APIKey.header to use a different header",
+				backendName, forwardHeader, apiKeyHeader, forwardHeader,
+			)
+		}
+	}
+
 	return nil
 }

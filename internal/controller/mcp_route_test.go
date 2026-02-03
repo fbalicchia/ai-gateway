@@ -375,6 +375,143 @@ func TestMCPRouteController_ensureMCPBackendRefHTTPFilter(t *testing.T) {
 	require.Nil(t, httpFilter.Spec.CredentialInjection)
 }
 
+func Test_validateBackendSecurityPolicy(t *testing.T) {
+	tests := []struct {
+		name        string
+		policy      *aigv1a1.MCPBackendSecurityPolicy
+		backendName gwapiv1.ObjectName
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:        "nil policy - no conflict",
+			policy:      nil,
+			backendName: "backend1",
+			wantErr:     false,
+		},
+		{
+			name: "nil APIKey - no conflict",
+			policy: &aigv1a1.MCPBackendSecurityPolicy{
+				HeadersToForward: []string{"X-User-ID"},
+			},
+			backendName: "backend1",
+			wantErr:     false,
+		},
+		{
+			name: "empty headersToForward - no conflict",
+			policy: &aigv1a1.MCPBackendSecurityPolicy{
+				APIKey: &aigv1a1.MCPBackendAPIKey{
+					Inline: ptr.To("secret-key"),
+				},
+				HeadersToForward: []string{},
+			},
+			backendName: "backend1",
+			wantErr:     false,
+		},
+		{
+			name: "different headers - no conflict",
+			policy: &aigv1a1.MCPBackendSecurityPolicy{
+				APIKey: &aigv1a1.MCPBackendAPIKey{
+					Inline: ptr.To("secret-key"),
+					Header: ptr.To("X-API-Key"),
+				},
+				HeadersToForward: []string{"X-User-ID", "X-Tenant-ID"},
+			},
+			backendName: "backend1",
+			wantErr:     false,
+		},
+		{
+			name: "forward Authorization with different APIKey header - no conflict",
+			policy: &aigv1a1.MCPBackendSecurityPolicy{
+				APIKey: &aigv1a1.MCPBackendAPIKey{
+					Inline: ptr.To("secret-key"),
+					Header: ptr.To("X-API-Key"), // Different header
+				},
+				HeadersToForward: []string{"Authorization"},
+			},
+			backendName: "backend1",
+			wantErr:     false,
+		},
+		{
+			name: "default Authorization conflict",
+			policy: &aigv1a1.MCPBackendSecurityPolicy{
+				APIKey: &aigv1a1.MCPBackendAPIKey{
+					Inline: ptr.To("secret-key"),
+					// header defaults to "Authorization"
+				},
+				HeadersToForward: []string{"Authorization"},
+			},
+			backendName: "my-backend",
+			wantErr:     true,
+			errContains: `backend "my-backend": cannot forward header "Authorization"`,
+		},
+		{
+			name: "custom header conflict",
+			policy: &aigv1a1.MCPBackendSecurityPolicy{
+				APIKey: &aigv1a1.MCPBackendAPIKey{
+					Inline: ptr.To("secret-key"),
+					Header: ptr.To("X-API-Key"),
+				},
+				HeadersToForward: []string{"X-User-ID", "X-API-Key"},
+			},
+			backendName: "backend1",
+			wantErr:     true,
+			errContains: `cannot forward header "X-API-Key"`,
+		},
+		{
+			name: "case-insensitive conflict - lowercase forward",
+			policy: &aigv1a1.MCPBackendSecurityPolicy{
+				APIKey: &aigv1a1.MCPBackendAPIKey{
+					Inline: ptr.To("secret-key"),
+					Header: ptr.To("Authorization"),
+				},
+				HeadersToForward: []string{"authorization"}, // lowercase
+			},
+			backendName: "backend1",
+			wantErr:     true,
+			errContains: `cannot forward header "authorization"`,
+		},
+		{
+			name: "case-insensitive conflict - mixed case",
+			policy: &aigv1a1.MCPBackendSecurityPolicy{
+				APIKey: &aigv1a1.MCPBackendAPIKey{
+					Inline: ptr.To("secret-key"),
+					Header: ptr.To("x-api-key"),
+				},
+				HeadersToForward: []string{"X-API-KEY"}, // uppercase
+			},
+			backendName: "backend1",
+			wantErr:     true,
+			errContains: `cannot forward header "X-API-KEY"`,
+		},
+		{
+			name: "multiple headers with one conflict",
+			policy: &aigv1a1.MCPBackendSecurityPolicy{
+				APIKey: &aigv1a1.MCPBackendAPIKey{
+					Inline: ptr.To("secret-key"),
+					Header: ptr.To("X-API-Key"),
+				},
+				HeadersToForward: []string{"X-User-ID", "X-Tenant-ID", "X-API-Key", "X-Request-ID"},
+			},
+			backendName: "backend1",
+			wantErr:     true,
+			errContains: `cannot forward header "X-API-Key"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateBackendSecurityPolicy(tt.policy, tt.backendName)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.errContains)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestMCPRouteController_syncGateways_NamespaceCrossReference(t *testing.T) {
 	c := requireNewFakeClientWithIndexesForMCP(t)
 	eventCh := internaltesting.NewControllerEventChan[*gwapiv1.Gateway]()

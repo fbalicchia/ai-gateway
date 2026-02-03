@@ -503,6 +503,13 @@ func mcpConfig(mcpRoutes []aigv1a1.MCPRoute) (_ *filterapi.MCPConfig, hasEffecti
 					IncludeRegex: b.ToolSelector.IncludeRegex,
 				}
 			}
+			// Convert headers to forward (normalize to lowercase)
+			if b.SecurityPolicy != nil && len(b.SecurityPolicy.HeadersToForward) > 0 {
+				mcpBackend.HeadersToForward = make([]string, len(b.SecurityPolicy.HeadersToForward))
+				for i, h := range b.SecurityPolicy.HeadersToForward {
+					mcpBackend.HeadersToForward[i] = strings.ToLower(h)
+				}
+			}
 			mcpRoute.Backends = append(
 				mcpRoute.Backends, mcpBackend)
 		}

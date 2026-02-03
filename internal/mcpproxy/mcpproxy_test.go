@@ -162,6 +162,145 @@ func Test_applyOriginalPathHeaders(t *testing.T) {
 	})
 }
 
+func Test_applyHeadersToForward(t *testing.T) {
+	t.Run("no headers to forward - no changes", func(t *testing.T) {
+		reqCtx := &mcpRequestContext{
+			requestHeaders: http.Header{
+				"X-User-Id":   []string{"user-123"},
+				"X-Tenant-Id": []string{"tenant-456"},
+			},
+		}
+		req, err := http.NewRequest(http.MethodPost, "http://example", nil)
+		require.NoError(t, err)
+
+		backend := filterapi.MCPBackend{Name: "test-backend", HeadersToForward: nil}
+		reqCtx.applyHeadersToForward(req, backend)
+
+		require.Empty(t, req.Header.Get("x-user-id"))
+		require.Empty(t, req.Header.Get("x-tenant-id"))
+	})
+
+	t.Run("nil requestHeaders - no changes", func(t *testing.T) {
+		reqCtx := &mcpRequestContext{
+			requestHeaders: nil,
+		}
+		req, err := http.NewRequest(http.MethodPost, "http://example", nil)
+		require.NoError(t, err)
+
+		backend := filterapi.MCPBackend{
+			Name:             "test-backend",
+			HeadersToForward: []string{"x-user-id"},
+		}
+		reqCtx.applyHeadersToForward(req, backend)
+
+		require.Empty(t, req.Header.Get("x-user-id"))
+	})
+
+	t.Run("forward single header", func(t *testing.T) {
+		reqCtx := &mcpRequestContext{
+			requestHeaders: http.Header{
+				"X-User-Id":   []string{"user-123"},
+				"X-Tenant-Id": []string{"tenant-456"},
+			},
+		}
+		req, err := http.NewRequest(http.MethodPost, "http://example", nil)
+		require.NoError(t, err)
+
+		backend := filterapi.MCPBackend{
+			Name:             "test-backend",
+			HeadersToForward: []string{"x-user-id"}, // lowercase (normalized)
+		}
+		reqCtx.applyHeadersToForward(req, backend)
+
+		require.Equal(t, "user-123", req.Header.Get("x-user-id"))
+		require.Empty(t, req.Header.Get("x-tenant-id"))
+	})
+
+	t.Run("forward multiple headers", func(t *testing.T) {
+		reqCtx := &mcpRequestContext{
+			requestHeaders: http.Header{
+				"X-User-Id":    []string{"user-123"},
+				"X-Tenant-Id":  []string{"tenant-456"},
+				"X-Request-Id": []string{"req-789"},
+			},
+		}
+		req, err := http.NewRequest(http.MethodPost, "http://example", nil)
+		require.NoError(t, err)
+
+		backend := filterapi.MCPBackend{
+			Name:             "test-backend",
+			HeadersToForward: []string{"x-user-id", "x-tenant-id"},
+		}
+		reqCtx.applyHeadersToForward(req, backend)
+
+		require.Equal(t, "user-123", req.Header.Get("x-user-id"))
+		require.Equal(t, "tenant-456", req.Header.Get("x-tenant-id"))
+		require.Empty(t, req.Header.Get("x-request-id"))
+	})
+
+	t.Run("case-insensitive header lookup", func(t *testing.T) {
+		// http.Header.Get() is case-insensitive per RFC, use Set() to ensure proper canonicalization
+		requestHeaders := make(http.Header)
+		requestHeaders.Set("X-User-Id", "user-123")
+		requestHeaders.Set("X-Tenant-Id", "tenant-456")
+		requestHeaders.Set("X-Request-Id", "req-789")
+
+		reqCtx := &mcpRequestContext{
+			requestHeaders: requestHeaders,
+		}
+		req, err := http.NewRequest(http.MethodPost, "http://example", nil)
+		require.NoError(t, err)
+
+		// HeadersToForward are normalized to lowercase
+		backend := filterapi.MCPBackend{
+			Name:             "test-backend",
+			HeadersToForward: []string{"x-user-id", "x-tenant-id", "x-request-id"},
+		}
+		reqCtx.applyHeadersToForward(req, backend)
+
+		require.Equal(t, "user-123", req.Header.Get("x-user-id"))
+		require.Equal(t, "tenant-456", req.Header.Get("x-tenant-id"))
+		require.Equal(t, "req-789", req.Header.Get("x-request-id"))
+	})
+
+	t.Run("missing header is silently skipped", func(t *testing.T) {
+		reqCtx := &mcpRequestContext{
+			requestHeaders: http.Header{
+				"X-User-Id": []string{"user-123"},
+			},
+		}
+		req, err := http.NewRequest(http.MethodPost, "http://example", nil)
+		require.NoError(t, err)
+
+		backend := filterapi.MCPBackend{
+			Name:             "test-backend",
+			HeadersToForward: []string{"x-user-id", "x-missing-header"},
+		}
+		reqCtx.applyHeadersToForward(req, backend)
+
+		require.Equal(t, "user-123", req.Header.Get("x-user-id"))
+		require.Empty(t, req.Header.Get("x-missing-header"))
+	})
+
+	t.Run("forward Authorization header", func(t *testing.T) {
+		reqCtx := &mcpRequestContext{
+			requestHeaders: http.Header{
+				"Authorization": []string{"Bearer user-token"},
+			},
+		}
+		req, err := http.NewRequest(http.MethodPost, "http://example", nil)
+		require.NoError(t, err)
+
+		backend := filterapi.MCPBackend{
+			Name:             "test-backend",
+			HeadersToForward: []string{"authorization"},
+		}
+		reqCtx.applyHeadersToForward(req, backend)
+
+		require.Equal(t, "Bearer user-token", req.Header.Get("authorization"))
+	})
+}
+
 func Test_extractMetaFromJSONRPCMessage(t *testing.T) {
 	t.Run("non request", func(t *testing.T) {
 		id, err := jsonrpc.MakeID("1")

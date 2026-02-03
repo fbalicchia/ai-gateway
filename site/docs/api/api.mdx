@@ -1797,7 +1797,7 @@ MCPBackendAPIKey defines the configuration for the API Key Authentication to a b
 **Appears in:**
 - [MCPRouteBackendRef](#mcproutebackendref)
 
-MCPBackendSecurityPolicy defines the security policy for a sp
+MCPBackendSecurityPolicy defines the security policy for a specific backend.
 
 ##### Fields
 
@@ -1808,6 +1808,11 @@ MCPBackendSecurityPolicy defines the security policy for a sp
   type="[MCPBackendAPIKey](#mcpbackendapikey)"
   required="false"
   description="APIKey is a mechanism to access a backend. The API key will be injected into the request headers."
+/><ApiField
+  name="headersToForward"
+  type="string array"
+  required="false"
+  description="HeadersToForward specifies which headers from the original client request should be forwarded to this backend.<br />Headers are case-insensitive per HTTP spec. If a header doesn't exist in the request, it is silently ignored.<br />Conflict detection: If APIKey is configured and headersToForward includes the APIKey injection header<br />(default `Authorization` or custom via APIKey.Header), the MCPRoute will be rejected with NotAccepted status."
 />
 
 

@@ -144,11 +144,21 @@ type MCPToolFilter struct {
 	IncludeRegex []string `json:"includeRegex,omitempty"`
 }
 
-// MCPBackendSecurityPolicy defines the security policy for a sp
+// MCPBackendSecurityPolicy defines the security policy for a specific backend.
 type MCPBackendSecurityPolicy struct {
 	// APIKey is a mechanism to access a backend. The API key will be injected into the request headers.
 	// +optional
 	APIKey *MCPBackendAPIKey `json:"apiKey,omitempty"`
+
+	// HeadersToForward specifies which headers from the original client request should be forwarded to this backend.
+	// Headers are case-insensitive per HTTP spec. If a header doesn't exist in the request, it is silently ignored.
+	//
+	// Conflict detection: If APIKey is configured and headersToForward includes the APIKey injection header
+	// (default "Authorization" or custom via APIKey.Header), the MCPRoute will be rejected with NotAccepted status.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxItems=16
+	HeadersToForward []string `json:"headersToForward,omitempty"`
 }
 
 // MCPBackendAPIKey defines the configuration for the API Key Authentication to a backend.

@@ -458,3 +458,45 @@ func newToolNotificationCounts(counts *notificationCounts) TestTool[struct{}, an
 		},
 	}
 }
+
+// ToolGetHeaderName is the name of the tool that gets a header value from the request.
+const ToolGetHeaderName = "get_header"
+
+// ToolGetHeaderArgs defines the arguments for the get_header tool.
+type ToolGetHeaderArgs struct {
+	HeaderName string `json:"header_name"`
+}
+
+// ToolGetHeader - get_header { header_name: string } -> header value.
+//
+// This tool returns the value of the specified header from the request.
+// Useful for testing header forwarding.
+var ToolGetHeader = TestTool[ToolGetHeaderArgs, any]{
+	Tool: &mcp.Tool{
+		Name:        ToolGetHeaderName,
+		Description: "Get the value of a specified header from the request",
+		InputSchema: &jsonschema.Schema{
+			Type: "object",
+			Properties: map[string]*jsonschema.Schema{
+				"header_name": {Type: "string", Description: "Name of the header to retrieve"},
+			},
+			Required: []string{"header_name"},
+		},
+	},
+	Handler: func(_ context.Context, req *mcp.CallToolRequest, args ToolGetHeaderArgs) (*mcp.CallToolResult, any, error) {
+		extra := req.GetExtra()
+		if extra == nil || extra.Header == nil {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: ""},
+				},
+			}, nil, nil
+		}
+		value := extra.Header.Get(args.HeaderName)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: value},
+			},
+		}, nil, nil
+	},
+}

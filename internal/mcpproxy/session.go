@@ -342,6 +342,7 @@ func (s *session) sendRequestPerBackend(ctx context.Context, eventChan chan<- *s
 	addMCPHeaders(req, request, routeName, backend.Name)
 	s.reqCtx.applyLogHeaderMappings(req, request)
 	s.reqCtx.applyOriginalPathHeaders(req)
+	s.reqCtx.applyHeadersToForward(req, backend)
 	req.Header.Set(protocolVersionHeader, protocolVersion20250618)
 	req.Header.Set(sessionIDHeader, cse.sessionID.String())
 	if httpMethod != http.MethodGet {
