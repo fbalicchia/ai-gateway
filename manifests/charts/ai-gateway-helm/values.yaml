@@ -38,9 +38,9 @@ endpointConfig:
 
 extProc:
   image:
-    repository: docker.io/envoyproxy/ai-gateway-extproc
+    repository: 805938651574.dkr.ecr.eu-west-1.amazonaws.com/ai-gateway-extproc
     # Overrides the image tag whose default is the chart appVersion.
-    tag: ""
+    tag: "x02"
   imagePullPolicy: IfNotPresent
   imagePullSecrets: []
   # One of "info", "debug", "trace", "warn", "error", "fatal", "panic".
@@ -117,9 +117,9 @@ controller:
 
   # -- Deployment configs --
   image:
-    repository: docker.io/envoyproxy/ai-gateway-controller
+    repository: 805938651574.dkr.ecr.eu-west-1.amazonaws.com/ai-gateway-controller
     # Overrides the image tag whose default is the chart appVersion.
-    tag: ""
+    tag: "x02"
   imagePullPolicy: IfNotPresent
   replicaCount: 1
   imagePullSecrets: []

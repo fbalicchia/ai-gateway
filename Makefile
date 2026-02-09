@@ -23,6 +23,8 @@ OCI_REGISTRY ?= docker.io/envoyproxy
 OCI_REPOSITORY_PREFIX ?= ${OCI_REGISTRY}/ai-gateway
 TAG ?= latest
 ENABLE_MULTI_PLATFORMS ?= false
+# Default platform for single-platform builds (used with --load). Set to your target platform.
+DOCKER_PLATFORM ?= linux/amd64
 HELM_CHART_VERSION ?= v0.0.0-latest
 
 # Arguments for go test. This can be used, for example, to run specific tests via
@@ -276,17 +278,18 @@ build-e2e: ## Build the docker images for the controller, extproc and testupstre
 # - `make docker-build.controller`: will build the controller command.
 # - `make docker-build.extproc`: will build the extproc command.
 #
-# By default, this will build for the current GOARCH and linux.
+# By default, this will build for linux/amd64 (configurable via DOCKER_PLATFORM).
 # To build for multiple platforms, set the ENABLE_MULTI_PLATFORMS variable to true.
 #
 # Example:
 # - `make docker-build.controller ENABLE_MULTI_PLATFORMS=true`
+# - `make docker-build.controller DOCKER_PLATFORM=linux/arm64` to build for arm64 only.
 #
 # Also, DOCKER_BUILD_ARGS can be set to pass additional arguments to the docker build command.
 #
 # Example:
 # - `make docker-build.controller ENABLE_MULTI_PLATFORMS=true DOCKER_BUILD_ARGS="--push"` to push the image to the registry.
-# - `make docker-build.controller ENABLE_MULTI_PLATFORMS=true DOCKER_BUILD_ARGS="--load"` to load the image after building.
+# - `make docker-build.controller DOCKER_BUILD_ARGS="--load"` to load the image after building.
 #
 # By default, the image tag is set to `latest`. `TAG` can be set to a different value.
 #
@@ -294,9 +297,13 @@ build-e2e: ## Build the docker images for the controller, extproc and testupstre
 # - `make docker-build.controller TAG=v1.2.3`
 #
 .PHONY: docker-build.%
-ifeq ($(ENABLE_MULTI_PLATFORMS),true)
+# Default to building for both amd64 and arm64 platforms
 docker-build.%: GOARCH_LIST = amd64 arm64
+ifeq ($(ENABLE_MULTI_PLATFORMS),true)
 docker-build.%: PLATFORMS = --platform linux/amd64,linux/arm64
+else
+# For single-platform builds (e.g., with --load), use DOCKER_PLATFORM
+docker-build.%: PLATFORMS = --platform $(DOCKER_PLATFORM)
 endif
 docker-build.%: ## Build a docker image for a given command.
 	$(eval IMAGE_NAME := $(if $(filter aigw,$(*)),cli,$(*)))
