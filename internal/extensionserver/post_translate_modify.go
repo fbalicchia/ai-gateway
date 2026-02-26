@@ -137,6 +137,12 @@ func (s *Server) PostTranslateModify(_ context.Context, req *egextension.PostTra
 	if err = s.maybeGenerateResourcesForMCPGateway(req); err != nil {
 		return nil, fmt.Errorf("failed to generate resources for MCP Gateway: %w", err)
 	}
+
+	// Generate the resources needed to support A2A Gateway functionality.
+	if err = s.maybeGenerateResourcesForA2AGateway(req); err != nil {
+		return nil, fmt.Errorf("failed to generate resources for A2A Gateway: %w", err)
+	}
+
 	if err = s.insertRequestHeaderToMetadataFilters(req.Listeners); err != nil {
 		return nil, fmt.Errorf("failed to insert request header metadata filter: %w", err)
 	}

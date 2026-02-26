@@ -226,6 +226,16 @@ func StartControllers(ctx context.Context, mgr manager.Manager, config *rest.Con
 		return fmt.Errorf("failed to create controller for MCPRoute: %w", err)
 	}
 
+	a2aRouteC := NewA2ARouteController(c, kubernetes.NewForConfigOrDie(config), logger.WithName("ai-gateway-a2a-route"),
+		gatewayEventChan,
+	)
+	if err = TypedControllerBuilderForCRD(mgr, &aigv1a1.A2ARoute{}).
+		Owns(&gwapiv1.HTTPRoute{}).
+		Owns(&egv1a1.Backend{}).
+		Complete(a2aRouteC); err != nil {
+		return fmt.Errorf("failed to create controller for A2ARoute: %w", err)
+	}
+
 	// GatewayConfig controller for gateway-scoped configuration.
 	gatewayConfigC := NewGatewayConfigController(c, logger.WithName("gateway-config"), gatewayEventChan)
 	if err = TypedControllerBuilderForCRD(mgr, &aigv1a1.GatewayConfig{}).
@@ -314,6 +324,12 @@ const (
 	// k8sClientIndexMCPRouteToAttachedGateway is the index name that maps from a Gateway to the
 	// MCPRoute that attaches to it.
 	k8sClientIndexMCPRouteToAttachedGateway = "GWAPIGatewayToReferencingMCPRoute"
+
+	// Indexes for A2A Gateway
+	//
+	// k8sClientIndexA2ARouteToAttachedGateway is the index name that maps from a Gateway to the
+	// A2ARoute that attaches to it.
+	k8sClientIndexA2ARouteToAttachedGateway = "GWAPIGatewayToReferencingA2ARoute"
 )
 
 // ApplyIndexing applies indexing to the given indexer. This is exported for testing purposes.
@@ -361,7 +377,26 @@ func ApplyIndexing(ctx context.Context, indexer func(ctx context.Context, obj cl
 	if err != nil {
 		return fmt.Errorf("failed to create index from Gateway to MCPRoute: %w", err)
 	}
+
+	err = indexer(ctx, &aigv1a1.A2ARoute{},
+		k8sClientIndexA2ARouteToAttachedGateway, a2aRouteToAttachedGatewayIndexFunc)
+	if err != nil {
+		return fmt.Errorf("failed to create index from Gateway to A2ARoute: %w", err)
+	}
 	return nil
+}
+
+func a2aRouteToAttachedGatewayIndexFunc(o client.Object) []string {
+	a2aRoute := o.(*aigv1a1.A2ARoute)
+	var ret []string
+	for _, ref := range a2aRoute.Spec.ParentRefs {
+		namespace := a2aRoute.Namespace
+		if ref.Namespace != nil && *ref.Namespace != "" {
+			namespace = string(*ref.Namespace)
+		}
+		ret = append(ret, fmt.Sprintf("%s.%s", ref.Name, namespace))
+	}
+	return ret
 }
 
 func mcpRouteToAttachedGatewayIndexFunc(o client.Object) []string {

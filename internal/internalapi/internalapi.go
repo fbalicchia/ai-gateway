@@ -70,6 +70,35 @@ const (
 )
 
 const (
+	// A2ABackendHeader is the special header key used to specify the target A2A backend name.
+	A2ABackendHeader = EnvoyAIGatewayHeaderPrefix + "a2a-backend"
+	// A2ARouteHeader is the special header key used to identify the A2A route.
+	A2ARouteHeader = EnvoyAIGatewayHeaderPrefix + "a2a-route"
+	// A2ABackendListenerPort is the port for the A2A backend listener.
+	A2ABackendListenerPort = 10089
+	// A2AProxyPort is the port where the A2A proxy listens.
+	A2AProxyPort = 9857
+	// A2AGeneratedResourceCommonPrefix is the common prefix for all A2A-related generated resources.
+	A2AGeneratedResourceCommonPrefix = "ai-eg-a2a-"
+	// A2AMainHTTPRoutePrefix is the prefix for the main HTTPRoute resources generated for A2A.
+	A2AMainHTTPRoutePrefix = A2AGeneratedResourceCommonPrefix + "main-"
+	// A2APerBackendRefHTTPRoutePrefix is the prefix for the per-backend-ref HTTPRoute resources generated for A2A.
+	A2APerBackendRefHTTPRoutePrefix = A2AGeneratedResourceCommonPrefix + "br-"
+	// A2APerBackendHTTPRouteFilterPrefix is the prefix for the HTTP route filter names for per-backend A2A resources.
+	A2APerBackendHTTPRouteFilterPrefix = A2AGeneratedResourceCommonPrefix + "brf-"
+	// A2AMetadataHeaderPrefix is the prefix for special headers used to pass A2A metadata in the filter metadata.
+	A2AMetadataHeaderPrefix = "x-ai-eg-a2a-metadata-"
+	// A2AMetadataHeaderMethod is the special header key used to pass the A2A method in the filter metadata.
+	A2AMetadataHeaderMethod = A2AMetadataHeaderPrefix + "method"
+)
+
+// A2AInternalHeadersToMetadata maps special A2A headers to metadata keys.
+var A2AInternalHeadersToMetadata = map[string]string{
+	A2ABackendHeader:        "a2a_backend",
+	A2AMetadataHeaderMethod: "a2a_method",
+}
+
+const (
 	// XDSClusterMetadataBackendNamePath is the full attribute path to access the backend name in cluster metadata in xDS attributes.
 	XDSClusterMetadataBackendNamePath = "xds.cluster_metadata.filter_metadata['aigateway.envoy.io']['per_route_rule_backend_name']"
 	// XDSUpstreamHostMetadataBackendNamePath is the full attribute path to access the backend name in upstream host metadata in xDS attributes.

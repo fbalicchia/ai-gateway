@@ -41,6 +41,8 @@ type Config struct {
 	Models []Model `json:"models,omitempty"`
 	// MCPConfig is the configuration for the MCPRoute implementations.
 	MCPConfig *MCPConfig `json:"mcpConfig,omitempty"`
+	// A2AConfig is the configuration for the A2ARoute implementations.
+	A2AConfig *A2AConfig `json:"a2aConfig,omitempty"`
 }
 
 // Model corresponds to the OpenAI model object in the OpenAI-compatible APIs

@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
+	"github.com/envoyproxy/ai-gateway/internal/a2aproxy"
 	"github.com/envoyproxy/ai-gateway/internal/endpointspec"
 	"github.com/envoyproxy/ai-gateway/internal/extproc"
 	"github.com/envoyproxy/ai-gateway/internal/filterapi"
@@ -54,6 +55,7 @@ type extProcFlags struct {
 	mcpFallbackSessionEncryptionSeed       string        // Fallback seed for deriving the key for encrypting MCP sessions.
 	mcpFallbackSessionEncryptionIterations int           // Number of iterations to use for PBKDF2 key derivation for fallback MCP session encryption.
 	mcpWriteTimeout                        time.Duration // the maximum duration before timing out writes of the MCP response.
+	a2aAddr                                string        // address for the A2A proxy server which can be either tcp or unix domain socket.
 	// rootPrefix is the root prefix for all the processors.
 	rootPrefix string
 	// maxRecvMsgSize is the maximum message size in bytes that the gRPC server can receive.
@@ -128,6 +130,7 @@ func parseAndValidateFlags(args []string) (extProcFlags, error) {
 		"Maximum message size in bytes that the gRPC server can receive. Default is unlimited since the flow control should be handled by Envoy.",
 	)
 	fs.StringVar(&flags.mcpAddr, "mcpAddr", "", "the address (TCP or UDS) for the MCP proxy server, such as :1063 or unix:///tmp/ext_proc.sock. Optional.")
+	fs.StringVar(&flags.a2aAddr, "a2aAddr", "", "the address (TCP or UDS) for the A2A proxy server, such as :9857 or unix:///tmp/a2a_proxy.sock. Optional.")
 	fs.StringVar(&flags.mcpSessionEncryptionSeed, "mcpSessionEncryptionSeed", "default-insecure-seed",
 		"Seed used to derive the MCP session encryption key. This should be changed and set to a secure value.")
 	fs.IntVar(&flags.mcpSessionEncryptionIterations, "mcpSessionEncryptionIterations", 100_000,
@@ -242,6 +245,23 @@ func Main(ctx context.Context, args []string, stderr io.Writer) (err error) {
 		l.Info("MCP proxy is enabled", "address", flags.mcpAddr)
 	}
 
+	var a2aLis net.Listener
+	if flags.a2aAddr != "" {
+		a2aNetwork, a2aAddress := listenAddress(flags.a2aAddr)
+		a2aLis, err = listen(ctx, "a2a proxy", a2aNetwork, a2aAddress)
+		if err != nil {
+			return err
+		}
+		if a2aNetwork == "unix" {
+			// Change the permission of the UDS to 0775 so that the envoy process (the same group) can access it.
+			err = os.Chmod(a2aAddress, 0o775)
+			if err != nil {
+				return fmt.Errorf("failed to change UDS permission: %w", err)
+			}
+		}
+		l.Info("A2A proxy is enabled", "address", flags.a2aAddr)
+	}
+
 	spanRequestHeaderAttributes, metricsRequestHeaderAttributes, logRequestHeaderAttributes, err := requestheaderattrs.ResolveAll(
 		flags.requestHeaderAttributes,
 		flags.spanRequestHeaderAttributes,
@@ -285,6 +305,7 @@ func Main(ctx context.Context, args []string, stderr io.Writer) (err error) {
 	speechMetricsFactory := metrics.NewMetricsFactory(meter, metricsRequestHeaderAttributes, metrics.GenAIOperationSpeech)
 	rerankMetricsFactory := metrics.NewMetricsFactory(meter, metricsRequestHeaderAttributes, metrics.GenAIOperationRerank)
 	mcpMetrics := metrics.NewMCP(meter, metricsRequestHeaderAttributes)
+	a2aMetrics := metrics.NewA2A(meter)
 
 	extproc.LogRequestHeaderAttributes = logRequestHeaderAttributes
 
@@ -352,6 +373,30 @@ func Main(ctx context.Context, args []string, stderr io.Writer) (err error) {
 		}()
 	}
 
+	var a2aServer *http.Server
+	if a2aLis != nil {
+		// Reuse the same session crypto as MCP for task ID encryption.
+		a2aSessionCrypto := mcpproxy.NewPBKDF2AesGcmSessionCrypto(flags.mcpSessionEncryptionSeed, flags.mcpSessionEncryptionIterations)
+		var a2aProxyMux *http.ServeMux
+		var a2aProxyConfig *a2aproxy.ProxyConfig
+		a2aProxyConfig, a2aProxyMux = a2aproxy.NewA2AProxy(l.With("component", "a2a-proxy"), a2aMetrics, a2aSessionCrypto)
+		if err = filterapi.StartConfigWatcher(ctx, flags.configPath, a2aProxyConfig, l, time.Second*5); err != nil {
+			return fmt.Errorf("failed to start config watcher: %w", err)
+		}
+
+		a2aServer = &http.Server{
+			Handler:           a2aProxyMux,
+			ReadHeaderTimeout: 120 * time.Second,
+			WriteTimeout:      120 * time.Second,
+		}
+		go func() {
+			l.Info("Starting a2a proxy", "addr", a2aLis.Addr())
+			if err2 := a2aServer.Serve(a2aLis); err2 != nil && !errors.Is(err2, http.ErrServerClosed) {
+				l.Error("a2a proxy failed", "error", err2)
+			}
+		}()
+	}
+
 	s := grpc.NewServer(grpc.MaxRecvMsgSize(flags.maxRecvMsgSize))
 	extprocv3.RegisterExternalProcessorServer(s, server)
 	grpc_health_v1.RegisterHealthServer(s, server)
@@ -389,6 +434,11 @@ func Main(ctx context.Context, args []string, stderr io.Writer) (err error) {
 		if mcpServer != nil {
 			if err := mcpServer.Shutdown(shutdownCtx); err != nil {
 				l.Error("Failed to shutdown mcp proxy server gracefully", "error", err)
+			}
+		}
+		if a2aServer != nil {
+			if err := a2aServer.Shutdown(shutdownCtx); err != nil {
+				l.Error("Failed to shutdown a2a proxy server gracefully", "error", err)
 			}
 		}
 	}()

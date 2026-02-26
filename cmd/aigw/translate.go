@@ -44,12 +44,12 @@ func translate(ctx context.Context, paths []string, output, stderr io.Writer) er
 	if err != nil {
 		return err
 	}
-	aigwRoutes, mcpRoutes, aigwBackends, backendSecurityPolicies, backendTLSConfigs, originalGateways, originalSecrets, _, err := collectObjects(yaml, output, stderrLogger)
+	aigwRoutes, mcpRoutes, a2aRoutes, aigwBackends, backendSecurityPolicies, backendTLSConfigs, originalGateways, originalSecrets, _, err := collectObjects(yaml, output, stderrLogger)
 	if err != nil {
 		return fmt.Errorf("error translating: %w", err)
 	}
 
-	_, _, httpRoutes, extensionPolicies, httpRouteFilter, backends, secrets, backendTrafficPolicies, securityPolicies, err := translateCustomResourceObjects(ctx, aigwRoutes, mcpRoutes, aigwBackends, backendSecurityPolicies, backendTLSConfigs, originalGateways, originalSecrets, stderrLogger)
+	_, _, httpRoutes, extensionPolicies, httpRouteFilter, backends, secrets, backendTrafficPolicies, securityPolicies, err := translateCustomResourceObjects(ctx, aigwRoutes, mcpRoutes, a2aRoutes, aigwBackends, backendSecurityPolicies, backendTLSConfigs, originalGateways, originalSecrets, stderrLogger)
 	if err != nil {
 		return fmt.Errorf("error emitting: %w", err)
 	}
@@ -114,6 +114,7 @@ func readYamlsAsString(paths []string) (string, error) {
 func collectObjects(yamlInput string, out io.Writer, logger *slog.Logger) (
 	aigwRoutes []*aigv1a1.AIGatewayRoute,
 	mcpRoutes []*aigv1a1.MCPRoute,
+	a2aRoutes []*aigv1a1.A2ARoute,
 	aigwBackends []*aigv1a1.AIServiceBackend,
 	backendSecurityPolicies []*aigv1a1.BackendSecurityPolicy,
 	backendTLSConfigs []*gwapiv1.BackendTLSPolicy,
@@ -159,6 +160,8 @@ func collectObjects(yamlInput string, out io.Writer, logger *slog.Logger) (
 			mustExtractAndAppend(obj, &aigwRoutes)
 		case "MCPRoute":
 			mustExtractAndAppend(obj, &mcpRoutes)
+		case "A2ARoute":
+			mustExtractAndAppend(obj, &a2aRoutes)
 		case "AIServiceBackend":
 			mustExtractAndAppend(obj, &aigwBackends)
 		case "BackendSecurityPolicy":
@@ -193,6 +196,7 @@ func translateCustomResourceObjects(
 	ctx context.Context,
 	aigwRoutes []*aigv1a1.AIGatewayRoute,
 	mcpRoutes []*aigv1a1.MCPRoute,
+	a2aRoutes []*aigv1a1.A2ARoute,
 	aigwBackends []*aigv1a1.AIServiceBackend,
 	backendSecurityPolicies []*aigv1a1.BackendSecurityPolicy,
 	backendTLSPolicies []*gwapiv1.BackendTLSPolicy,
@@ -215,6 +219,7 @@ func translateCustomResourceObjects(
 		WithScheme(controller.Scheme).
 		WithStatusSubresource(&aigv1a1.AIGatewayRoute{}).
 		WithStatusSubresource(&aigv1a1.MCPRoute{}).
+		WithStatusSubresource(&aigv1a1.A2ARoute{}).
 		WithStatusSubresource(&aigv1a1.AIServiceBackend{}).
 		WithStatusSubresource(&aigv1a1.BackendSecurityPolicy{})
 	_ = controller.ApplyIndexing(ctx, func(_ context.Context, obj client.Object, field string, extractValue client.IndexerFunc) error {
@@ -244,6 +249,9 @@ func translateCustomResourceObjects(
 	mcpC := controller.NewMCPRouteController(fakeClient, fakeClientSet, logr.FromSlogHandler(logger.Handler()),
 		make(chan event.GenericEvent),
 	)
+	a2aC := controller.NewA2ARouteController(fakeClient, fakeClientSet, logr.FromSlogHandler(logger.Handler()),
+		make(chan event.GenericEvent),
+	)
 	gwC := controller.NewGatewayController(fakeClient, fakeClientSet, logr.FromSlogHandler(logger.Handler()),
 		"docker.io/envoyproxy/ai-gateway-extproc:latest", "debug", true, func() string {
 			return "aigw-translate"
@@ -265,6 +273,9 @@ func translateCustomResourceObjects(
 	}
 	for _, mcpRoute := range mcpRoutes {
 		mustCreateAndReconcile(ctx, fakeClient, mcpRoute, mcpC, logger)
+	}
+	for _, a2aRoute := range a2aRoutes {
+		mustCreateAndReconcile(ctx, fakeClient, a2aRoute, a2aC, logger)
 	}
 	for _, gw := range gws {
 		mustCreateAndReconcile(ctx, fakeClient, gw, gwC, logger)
